@@ -20,6 +20,9 @@ Needs Android 8.0 or newer. The app has no internet permission: songs are analys
 | MP3, WAV, M4A, OGG, FLAC | Taps detected from the recording: every drum hit, strum and note onset, plus a best guess at each note's pitch. |
 | MIDI (`.mid`) | The song's exact notes, with note names. Pick which part to learn. |
 
+- **Instruments:** keys, guitar (with two-finger chords), drums (kick, snare, tom, hi-hat pads), sax and violin (taps plus drag slides). Each has its own layout, on-stage player and wrong-note sound.
+- **Crowd boost:** clean hits fill the crowd meter. Each level recolours the stage (blue, green, pink, purple, red) and multiplies the score up to ×4. Misses drain it.
+- **Open with / Share to:** send any audio file on the phone straight to Beat Tutor from a file manager.
 - **Difficulty** thins the taps out: Easy follows the beat, Hard plays every note.
 - **Play** scores your timing (Perfect, Great, Good, Miss) with combos.
 - **Learn** pauses the song at each note until you tap the right lane.

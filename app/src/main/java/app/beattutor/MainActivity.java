@@ -2,8 +2,10 @@ package app.beattutor;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.OpenableColumns;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.ValueCallback;
@@ -16,6 +18,10 @@ import android.webkit.WebViewClient;
 
 import androidx.webkit.WebViewAssetLoader;
 
+import org.json.JSONObject;
+
+import java.io.InputStream;
+
 /** Full-screen shell around the game page bundled in assets/index.html. */
 public class MainActivity extends Activity {
     private static final int PICK_SONG = 41;
@@ -23,6 +29,9 @@ public class MainActivity extends Activity {
 
     private WebView web;
     private ValueCallback<Uri[]> pendingPick;
+    private volatile Uri sharedSong;   // a song another app handed to us
+    private String sharedName;
+    private boolean pageReady;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -48,7 +57,26 @@ public class MainActivity extends Activity {
         web.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                return assets.shouldInterceptRequest(request.getUrl());
+                Uri url = request.getUrl();
+                if (HOST.equals(url.getHost()) && "/shared/song".equals(url.getPath())) {
+                    // The page fetches the shared song from here; it never touches the network.
+                    Uri song = sharedSong;
+                    if (song == null) return null;
+                    try {
+                        InputStream in = getContentResolver().openInputStream(song);
+                        if (in == null) return null;
+                        return new WebResourceResponse("application/octet-stream", null, in);
+                    } catch (Exception e) {
+                        return null;
+                    }
+                }
+                return assets.shouldInterceptRequest(url);
+            }
+
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                pageReady = true;
+                openSharedSong();
             }
 
             @Override
@@ -79,11 +107,47 @@ public class MainActivity extends Activity {
             }
         });
 
+        readIntent(getIntent());
         if (savedInstanceState == null) {
             web.loadUrl("https://" + HOST + "/assets/index.html");
         } else {
             web.restoreState(savedInstanceState);
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        readIntent(intent);
+        openSharedSong();
+    }
+
+    /** "Open with" and "Share to" from a file manager or another app. */
+    private void readIntent(Intent intent) {
+        if (intent == null) return;
+        Uri uri = null;
+        if (Intent.ACTION_VIEW.equals(intent.getAction())) {
+            uri = intent.getData();
+        } else if (Intent.ACTION_SEND.equals(intent.getAction())) {
+            uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+        }
+        if (uri == null) return;
+        String name = null;
+        try (Cursor c = getContentResolver().query(uri, new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) name = c.getString(0);
+        } catch (Exception ignored) {
+        }
+        if (name == null) name = uri.getLastPathSegment();
+        sharedName = name == null ? "Shared song" : name;
+        sharedSong = uri;
+    }
+
+    private void openSharedSong() {
+        if (!pageReady || sharedSong == null || sharedName == null) return;
+        String name = sharedName;
+        sharedName = null; // hand each shared song to the page once
+        web.evaluateJavascript("window.__openShared&&window.__openShared(" + JSONObject.quote(name) + ")", null);
     }
 
     @Override
