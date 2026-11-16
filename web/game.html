@@ -33,6 +33,8 @@ p{margin:0;line-height:1.5}
 .btn.ghost{background:transparent;color:var(--fg);border:2px solid var(--line)}
 .btn:focus-visible,.seg button:focus-visible,#pauseBtn:focus-visible,select:focus-visible{outline:3px solid var(--l3);outline-offset:2px}
 .btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.35;cursor:default}
+.btn.picked{background:var(--panel);color:var(--fg);border:2px solid var(--l2);overflow-wrap:anywhere;text-transform:none;letter-spacing:0;font-size:16px}
 .stack{display:flex;flex-direction:column;gap:10px}
 .steps{display:grid;gap:8px;margin:0;padding:0;list-style:none}
 .steps li{display:grid;grid-template-columns:74px 1fr;gap:10px;align-items:baseline;font-size:14px;line-height:1.4}
@@ -81,12 +83,22 @@ input[type=range]{width:100%;accent-color:var(--accent);height:28px}
         <li><b>Learn</b><span>Slow the song down, or use Learn mode so the music waits for you.</span></li>
       </ul>
       <div class="stack">
-        <label class="btn primary" for="fileIn">Choose a song</label>
-        <input id="fileIn" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.mid,.midi" hidden>
-        <button id="demoBtn" class="btn ghost" type="button">Play the demo</button>
+        <div class="field">
+          <span class="lab">1 · Your song (required)</span>
+          <label class="btn primary" for="fileIn" id="songPick">Choose a song</label>
+          <input id="fileIn" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" hidden>
+        </div>
+        <div class="field">
+          <span class="lab">2 · Its MIDI file (optional)</span>
+          <label class="btn ghost" for="midiHomeIn" id="midiPick">Add a MIDI file</label>
+          <input id="midiHomeIn" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+          <p class="small dim">Skip this and the taps are detected from the recording. Add it and you play the song's exact notes over the recording.</p>
+        </div>
+        <button id="goBtn" class="btn primary" type="button" disabled>Continue</button>
+        <button id="demoBtn" class="btn ghost" type="button">Play the demo instead</button>
       </div>
       <p id="homeErr" class="err small" hidden></p>
-      <p class="small dim">Works with MP3, WAV, M4A, OGG and FLAC. Once it's loaded you can add the song's MIDI file for its exact notes. Your music never leaves this device.</p>
+      <p class="small dim">Songs can be MP3, WAV, M4A, OGG or FLAC. Your music never leaves this device. <span id="ver">Preview build</span></p>
     </div>
   </section>
 
@@ -647,7 +659,13 @@ async function addMidi(file){const err=$('midiErr');err.hidden=true;
 $('midiIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f&&song&&song.kind==='audio')addMidi(f)});
 $('midiDrop').addEventListener('click',()=>{song.midi=null;openSetup()});
 $('syncRange').addEventListener('input',e=>{song.midi.off=song.midi.auto+(+e.target.value)/1000;syncLab();refreshSetup()});
-$('fileIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)loadFile(f)});
+// home screen: step 1 the song, step 2 the optional MIDI, then Continue
+const pick={song:null,midi:null};
+function showPicks(){const a=$('songPick'),b=$('midiPick');a.textContent=pick.song?'✓ '+pick.song.name:'Choose a song';a.classList.toggle('picked',!!pick.song);a.classList.toggle('primary',!pick.song);
+  b.textContent=pick.midi?'✓ '+pick.midi.name:'Add a MIDI file';b.classList.toggle('picked',!!pick.midi);b.classList.toggle('ghost',!pick.midi);$('goBtn').disabled=!pick.song}
+$('fileIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f){pick.song=f;homeErr('');showPicks()}});
+$('midiHomeIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f){pick.midi=f;showPicks()}});
+$('goBtn').addEventListener('click',async()=>{if(!pick.song)return;const m=pick.midi;await loadFile(pick.song);if(m&&song&&song.kind==='audio'&&!$('setup').hidden)await addMidi(m)});
 $('demoBtn').addEventListener('click',()=>{ac();homeErr('');song=demoSong();openSetup()});
 
 // a song handed over by Android (Open with / Share to Beat Tutor)

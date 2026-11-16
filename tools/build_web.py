@@ -6,6 +6,10 @@ frag = (root / "web" / "game.html").read_text(encoding="utf-8")
 m = re.search(r"<title>.*?</title>", frag, re.S | re.I)
 title = m.group(0) if m else "<title>Beat Tutor</title>"
 body = frag.replace(title, "", 1)
+import os
+build = os.environ.get("GITHUB_RUN_NUMBER")
+if build:
+    body = body.replace("Preview build", "Version 1.0." + build)
 page = (
     '<!doctype html><html lang="en"><head><meta charset="utf-8">'
     '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">'
