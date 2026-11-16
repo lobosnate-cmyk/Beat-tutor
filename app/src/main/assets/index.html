@@ -76,23 +76,23 @@ input[type=range]{width:100%;accent-color:var(--accent);height:28px}
       <div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       <div class="kicker">Tap along. Learn the song.</div>
       <h1>Beat <span>Tutor</span></h1>
-      <p>Load any song from your phone. Beat Tutor listens to it, turns its beats and notes into taps, and coaches you through them on keys, guitar, drums, sax or violin.</p>
+      <p>Load a song's MIDI and its recording. Beat Tutor turns the notes into taps and coaches you through them on keys, guitar, drums, sax or violin.</p>
       <ul class="steps">
-        <li><b>Listen</b><span>It finds every beat and note in the track and works out the tempo.</span></li>
+        <li><b>Load</b><span>A MIDI file gives the exact notes. The recording plays underneath as the backing track.</span></li>
         <li><b>Tap</b><span>Notes fall down four lanes. Land them cleanly and the crowd lights up the stage.</span></li>
         <li><b>Learn</b><span>Slow the song down, or use Learn mode so the music waits for you.</span></li>
       </ul>
       <div class="stack">
         <div class="field">
-          <span class="lab">1 · Your song (required)</span>
-          <label class="btn primary" for="fileIn" id="songPick">Choose a song</label>
-          <input id="fileIn" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" hidden>
+          <span class="lab">1 · MIDI file (the notes you play)</span>
+          <label class="btn primary" for="midiHomeIn" id="midiPick">Choose a MIDI file</label>
+          <input id="midiHomeIn" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
         </div>
         <div class="field">
-          <span class="lab">2 · Its MIDI file (optional)</span>
-          <label class="btn ghost" for="midiHomeIn" id="midiPick">Add a MIDI file</label>
-          <input id="midiHomeIn" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
-          <p class="small dim">Skip this and the taps are detected from the recording. Add it and you play the song's exact notes over the recording.</p>
+          <span class="lab">2 · Recording (backing audio)</span>
+          <label class="btn ghost" for="fileIn" id="songPick">Add the recording</label>
+          <input id="fileIn" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac" hidden>
+          <p class="small dim">The MIDI decides every note. The recording only plays underneath. No MIDI? Add just a recording and the taps are detected from it.</p>
         </div>
         <button id="goBtn" class="btn primary" type="button" disabled>Continue</button>
         <button id="demoBtn" class="btn ghost" type="button">Play the demo instead</button>
@@ -134,6 +134,11 @@ input[type=range]{width:100%;accent-color:var(--accent);height:28px}
       <div class="field" id="partField" hidden>
         <label for="partSel">Part to learn</label>
         <select id="partSel"></select>
+      </div>
+      <div class="field" id="voiceField" hidden>
+        <label for="voiceSel">Notes to follow</label>
+        <select id="voiceSel"><option value="top">Top line: the lead, flute or vocal melody</option><option value="all">Everything in this part</option><option value="bass">Bass line: the lowest notes</option></select>
+        <p class="small dim">Use this when one MIDI part has the whole band mixed together.</p>
       </div>
       <div class="field">
         <span class="lab">Instrument</span>
@@ -294,7 +299,8 @@ function parseMidi(ab){const d=new DataView(ab);let p=0;
 function midiSong(parsed,name){const groups=parsed.groups.filter(g=>g.notes.length),mel=groups.filter(g=>!g.drum);
   if(!mel.length)throw new Error('No notes found');const maxN=Math.max(...mel.map(g=>g.notes.length));let best=null,ba=-1;
   for(const g of mel){if(g.notes.length<maxN*.35)continue;let a=0;for(const n of g.notes)a+=n.n;a/=g.notes.length;if(a>ba){ba=a;best=g}}
-  return{kind:'midi',name,groups,sel:groups.indexOf(best),duration:parsed.duration,bpm:parsed.bpm,rendered:null,rkey:'',off:0,auto:0}}
+  let plo=127,phi=0;for(const n of best.notes){if(n.n<plo)plo=n.n;if(n.n>phi)phi=n.n}
+  return{kind:'midi',name,groups,voice:mel.length===1&&phi-plo>=24?'top':'all',sel:groups.indexOf(best),duration:parsed.duration,bpm:parsed.bpm,rendered:null,rkey:'',off:0,auto:0}}
 function demoSong(){const q=.5,mel=[],bass=[];let t=0;
   const L1=[[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,1]];
   const endA=[[64,1.5],[62,.5],[62,2]],endB=[[62,1.5],[60,.5],[60,2]];
@@ -303,21 +309,19 @@ function demoSong(){const q=.5,mel=[],bass=[];let t=0;
   const roots=[48,48,48,43,48,48,43,48,43,48,43,48,48,48,43,48];
   roots.forEach((r,i)=>{bass.push({t:i*4*q,d:2*q*.95,n:r,v:80});bass.push({t:i*4*q+2*q,d:2*q*.95,n:r+7,v:70})});
   return{kind:'midi',name:'Ode to Joy (demo)',groups:[{name:'Melody',drum:false,notes:mel},{name:'Bass',drum:false,notes:bass}],sel:0,duration:t,bpm:120,rendered:null,rkey:''}}
-async function renderSong(song,speed){const sr=32000,OC=window.OfflineAudioContext||window.webkitOfflineAudioContext,oc=new OC(1,Math.ceil((song.duration/speed+2)*sr),sr);
-  const out=oc.createDynamicsCompressor();out.connect(oc.destination);
-  const nb=oc.createBuffer(1,sr*.3,sr),nd=nb.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;
-  let budget=9000;
-  const order=song.groups.map((g,i)=>i).sort((a,b)=>(a===song.sel?-1:0)-(b===song.sel?-1:0));
-  for(const gi of order){const g=song.groups[gi],lead=gi===song.sel;
-    for(const n of g.notes){if(--budget<0)break;const t=n.t/speed,vel=.5+.5*(n.v||90)/127;
-      if(g.drum){if(n.n===35||n.n===36){const o=oc.createOscillator(),ga=oc.createGain();o.frequency.setValueAtTime(150,t);o.frequency.exponentialRampToValueAtTime(45,t+.12);ga.gain.setValueAtTime(.5*vel,t);ga.gain.exponentialRampToValueAtTime(.001,t+.2);o.connect(ga).connect(out);o.start(t);o.stop(t+.22)}
-        else{const sn=n.n===38||n.n===40,s=oc.createBufferSource(),f=oc.createBiquadFilter(),ga=oc.createGain(),len=sn?.14:.05;s.buffer=nb;f.type=sn?'bandpass':'highpass';f.frequency.value=sn?1800:7000;ga.gain.setValueAtTime((sn?.22:.09)*vel,t);ga.gain.exponentialRampToValueAtTime(.001,t+len);s.connect(f).connect(ga).connect(out);s.start(t);s.stop(t+len+.02)}
+// plays a MIDI when there is no recording: a small synth written straight into a sound buffer
+async function renderSong(song,speed){const c=ac(),sr=22050,len=Math.ceil((song.duration/speed+2)*sr),buf=c.createBuffer(1,len,sr),d=buf.getChannelData(0);
+  const order=song.groups.map((g,i)=>i).sort((x,y)=>(x===song.sel?-1:0)-(y===song.sel?-1:0)),follow=new Set(voiceOf(song.groups[song.sel].notes,song.voice));let budget=12000,done=0;
+  for(const gi of order){const g=song.groups[gi];
+    for(const n of g.notes){if(--budget<0)break;const s0=Math.floor(n.t/speed*sr),vel=.5+.5*(n.v||90)/127;if(s0>=len)continue;
+      if(g.drum){if(n.n===35||n.n===36){let ph=0;const N=Math.min(len-s0,sr*.2|0);for(let i=0;i<N;i++){const x=i/sr;ph+=2*Math.PI*(45+105*Math.exp(-x*30))/sr;d[s0+i]+=.5*vel*Math.exp(-x*24)*Math.sin(ph)}}
+        else{const sn=n.n===38||n.n===40,N=Math.min(len-s0,sr*(sn?.14:.05)|0),ga=(sn?.16:.05)*vel,k=sn?32:90;for(let i=0;i<N;i++)d[s0+i]+=ga*Math.exp(-i/sr*k)*(Math.random()*2-1)}
         continue}
-      const d=Math.max(.06,Math.min(n.d/speed,lead?4:2.5)),o=oc.createOscillator(),ga=oc.createGain(),v=(lead?.34:.1)*vel;
-      o.type=lead?'triangle':'sine';o.frequency.value=440*Math.pow(2,(n.n-69)/12);
-      ga.gain.setValueAtTime(0,t);ga.gain.linearRampToValueAtTime(v,t+.008);ga.gain.setTargetAtTime(v*.55,t+.03,.3);ga.gain.setTargetAtTime(0,t+d,.05);
-      o.connect(ga).connect(out);o.start(t);o.stop(t+d+.35)}}
-  return oc.startRendering()}
+      const lead=follow.has(n),dur=Math.max(.06,Math.min(n.d/speed,lead?4:2.5)),N=Math.min(len-s0,Math.floor((dur+.22)*sr)),w=2*Math.PI*440*Math.pow(2,(n.n-69)/12)/sr,v=(lead?.3:.09)*vel,rel=dur*sr;
+      for(let i=0;i<N;i++){const env=(i<176?i/176:1)*(.55+.45*Math.exp(-i/sr*4))*(i>rel?Math.exp(-(i-rel)/sr*22):1),x=w*i;d[s0+i]+=v*env*(Math.sin(x)+(lead?.2*Math.sin(3*x)+.07*Math.sin(5*x):0))}
+      if(++done%250===0){setBusy('Preparing the song',.1+.9*done/Math.max(1,Math.min(12000,song.groups.reduce((q,z)=>q+z.notes.length,0))));await tick()}}}
+  for(let i=0;i<len;i++){const x=d[i];d[i]=x>1.5?1:x<-1.5?-1:x-x*x*x*4/27}
+  return buf}
 
 /* ---------- chart building ---------- */
 const INST={
@@ -346,7 +350,7 @@ function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];const src=song
     if(inst==='drums'){const dn=[];src.groups.forEach(g=>{if(g.drum)for(const n of g.notes){const t=n.t+off;if(t>=0&&t<=song.duration)dn.push({t,name:'',lane:gmLane(n.n)})}});
       if(dn.length){dn.sort((a,b)=>a.t-b.t);const last=[-9,-9,-9,-9],out=[];for(const n of dn)if(n.t-last[n.lane]>=Math.max(gap,.06)){out.push(n);last[n.lane]=n.t}return out}}
     const g=src.groups[src.sel],merged=[];
-    for(const n of g.notes){const l=merged[merged.length-1];if(l&&n.t-l.t<.04){l.cnt++;if(n.n>l.m)l.m=n.n}else merged.push({t:n.t,m:n.n,cnt:1})}
+    for(const n of voiceOf(g.notes,src.voice)){const l=merged[merged.length-1];if(l&&n.t-l.t<.04){l.cnt++;if(n.n>l.m)l.m=n.n}else merged.push({t:n.t,m:n.n,cnt:1})}
     let last=-9;for(const n of merged){const t=n.t+off;if(t<0||t>song.duration)continue;if(t-last>=gap){base.push({t,m:n.m,name:noteName(n.m),lane:0,ch:n.cnt>=2});last=t}}
     if(inst==='guitar'&&!base.some(n=>n.ch))base.forEach((n,i)=>{n.ch=i%4===0})}
   laneByRank(base);
@@ -356,10 +360,17 @@ function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];const src=song
   if(inst==='sax'||inst==='violin')for(let i=0;i+1<out.length;i++){const a=out[i],b=out[i+1],dt=b.t-a.t;if(dt>=.2&&dt<=.9&&a.lane!==b.lane){a.to=i+1;b.end=true;b.from=i;i++}}
   return out}
 
+// keep one voice of a part: the top line (nothing higher sounding) or the bass line (nothing lower)
+function voiceOf(notes,mode){if(mode!=='top'&&mode!=='bass')return notes;const s=mode==='top'?1:-1,out=[];
+  for(let i=0;i<notes.length;i++){const a=notes[i];let keep=true;
+    for(let j=i-1;j>=0&&a.t-notes[j].t<6;j--){const b=notes[j];if((b.n-a.n)*s>0&&b.t+Math.min(b.d,6)>a.t+.03){keep=false;break}}
+    if(keep)for(let j=i+1;j<notes.length&&notes[j].t-a.t<.06;j++)if((notes[j].n-a.n)*s>0){keep=false;break}
+    if(keep)out.push(a)}return out}
 function alignMidi(m,onsets){const ts=[];for(const g of m.groups)for(const n of g.notes)ts.push(n.t);ts.sort((a,b)=>a-b);
   const step=Math.max(1,Math.floor(ts.length/900)),LO=-15,HI=45,BIN=.01,nb=Math.round((HI-LO)/BIN),h=new Float32Array(nb+2);
   for(let i=0;i<ts.length;i+=step)for(const o of onsets){const d=o.t-ts[i];if(d>=LO&&d<HI)h[Math.floor((d-LO)/BIN)]++}
   let best=0,bv=-1;for(let i=1;i<nb;i++){const v=h[i-1]+2*h[i]+h[i+1];if(v>bv){bv=v;best=i}}
+  const z=Math.round(-LO/BIN),zv=Math.max(h[z-2]+2*h[z-1]+h[z],h[z-1]+2*h[z]+h[z+1],h[z]+2*h[z+1]+h[z+2]);if(zv>=.75*bv)return 0;
   const a=h[best-1],b=h[best],c=h[best+1],tot=a+b+c;return LO+(best+.5+(tot?(c-a)/tot:0))*BIN}
 
 /* ---------- transport (song clock) ---------- */
@@ -596,7 +607,7 @@ window.__back=()=>{if(G&&G.running){if(G.paused)quitGame();else pauseGame();retu
 function show(name){for(const s of['home','busy','setup','pause','results'])$(s).hidden=s!==name;$('pauseBtn').hidden=name!=='game'}
 function setBusy(txt,p){$('busyTxt').textContent=txt;$('busyBar').style.width=Math.round(clamp(p,0,1)*100)+'%'}
 function seg(ids,cur){ids.forEach((id,i)=>$(id).setAttribute('aria-pressed',String(i===cur)))}
-const bestKey=()=>song.name+'|'+S.inst+'|'+S.diff+(song.midi?'|m'+song.midi.sel:song.kind==='midi'?'|'+song.sel:'');
+const bestKey=()=>song.name+'|'+S.inst+'|'+S.diff+(mSrc()?'|m'+mSrc().sel+(mSrc().voice||'all'):'');
 function refreshSetup(){charts=[0,1,2].map(d=>buildChart(song,d,S.inst));seg(INST_IDS,INST_KEYS.indexOf(S.inst));$('instHint').textContent=INST[S.inst].hint;
   seg(['d0','d1','d2'],S.diff);seg(['mPlay','mLearn'],S.mode==='learn'?1:0);seg(['s50','s75','s100'],S.speed===.5?0:S.speed===.75?1:2);
   const n=charts[S.diff].length;$('diffHint').textContent=n+' taps'+(song.duration?' · about '+(n/Math.max(1,song.duration)*S.speed).toFixed(1)+' a second at this speed':'');
@@ -611,6 +622,7 @@ function openSetup(){$('songName').textContent=song.name;$('srcTxt').textContent
   const st=$('songStats');st.textContent='';const add=(l,v)=>{const s=document.createElement('span');s.append(l+' ');const b=document.createElement('b');b.textContent=v;s.append(b);st.append(s)};
   add('Length',fmtTime(song.duration));if(song.bpm>0)add('Tempo',(song.kind==='audio'?'≈':'')+Math.round(song.bpm)+' BPM');
   const ms=mSrc(),pf=$('partField');pf.hidden=!ms||ms.groups.filter(g=>!g.drum).length<2;
+  $('voiceField').hidden=!ms;if(ms)$('voiceSel').value=ms.voice||'all';
   $('midiField').hidden=song.kind!=='audio';$('midiNone').hidden=!!song.midi;$('midiHave').hidden=!song.midi;$('midiErr').hidden=true;
   if(song.midi){$('midiName').textContent=song.midi.name;$('syncRange').value=Math.round((song.midi.off-song.midi.auto)*1000);syncLab()}
   if(ms){const sel=$('partSel');sel.textContent='';ms.groups.forEach((g,i)=>{if(g.drum)return;const o=document.createElement('option');o.value=i;o.textContent=g.name+' ('+g.notes.length+' notes)';sel.append(o)});sel.value=ms.sel}
@@ -621,6 +633,7 @@ $('mPlay').addEventListener('click',()=>{S.mode='play';saveS();refreshSetup()});
 [['s50',.5],['s75',.75],['s100',1]].forEach(([id,v])=>$(id).addEventListener('click',()=>{S.speed=v;saveS();refreshSetup()}));
 $('namesChk').addEventListener('change',e=>{S.names=e.target.checked;saveS()});
 $('offRange').addEventListener('input',e=>{S.offset=+e.target.value;saveS();$('offLab').textContent='Timing offset: '+(S.offset>0?'+':'')+S.offset+' ms'});
+$('voiceSel').addEventListener('change',e=>{const m=mSrc();m.voice=e.target.value;m.rkey='';refreshSetup()});
 $('partSel').addEventListener('change',e=>{mSrc().sel=+e.target.value;refreshSetup()});
 $('startBtn').addEventListener('click',()=>{startGame()});$('changeBtn').addEventListener('click',()=>show('home'));
 $('pauseBtn').addEventListener('click',pauseGame);$('resumeBtn').addEventListener('click',resumeGame);$('restartBtn').addEventListener('click',()=>{trKill();startGame()});$('quitBtn').addEventListener('click',quitGame);
@@ -661,11 +674,11 @@ $('midiDrop').addEventListener('click',()=>{song.midi=null;openSetup()});
 $('syncRange').addEventListener('input',e=>{song.midi.off=song.midi.auto+(+e.target.value)/1000;syncLab();refreshSetup()});
 // home screen: step 1 the song, step 2 the optional MIDI, then Continue
 const pick={song:null,midi:null};
-function showPicks(){const a=$('songPick'),b=$('midiPick');a.textContent=pick.song?'✓ '+pick.song.name:'Choose a song';a.classList.toggle('picked',!!pick.song);a.classList.toggle('primary',!pick.song);
-  b.textContent=pick.midi?'✓ '+pick.midi.name:'Add a MIDI file';b.classList.toggle('picked',!!pick.midi);b.classList.toggle('ghost',!pick.midi);$('goBtn').disabled=!pick.song}
+function showPicks(){const a=$('songPick'),b=$('midiPick');a.textContent=pick.song?'✓ '+pick.song.name:'Add the recording';a.classList.toggle('picked',!!pick.song);a.classList.toggle('ghost',!pick.song);
+  b.textContent=pick.midi?'✓ '+pick.midi.name:'Choose a MIDI file';b.classList.toggle('picked',!!pick.midi);b.classList.toggle('primary',!pick.midi);$('goBtn').disabled=!pick.song&&!pick.midi}
 $('fileIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f){pick.song=f;homeErr('');showPicks()}});
 $('midiHomeIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f){pick.midi=f;showPicks()}});
-$('goBtn').addEventListener('click',async()=>{if(!pick.song)return;const m=pick.midi;await loadFile(pick.song);if(m&&song&&song.kind==='audio'&&!$('setup').hidden)await addMidi(m)});
+$('goBtn').addEventListener('click',async()=>{const m=pick.midi,a=pick.song;if(!a&&!m)return;if(!a){await loadFile(m);return}await loadFile(a);if(m&&song&&song.kind==='audio'&&!$('setup').hidden)await addMidi(m)});
 $('demoBtn').addEventListener('click',()=>{ac();homeErr('');song=demoSong();openSetup()});
 
 // a song handed over by Android (Open with / Share to Beat Tutor)
