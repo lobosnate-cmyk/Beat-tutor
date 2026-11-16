@@ -86,7 +86,7 @@ input[type=range]{width:100%;accent-color:var(--accent);height:28px}
         <button id="demoBtn" class="btn ghost" type="button">Play the demo</button>
       </div>
       <p id="homeErr" class="err small" hidden></p>
-      <p class="small dim">Works with MP3, WAV, M4A, OGG and FLAC. Load a MIDI file instead and you get the song's exact notes. Your music never leaves this device.</p>
+      <p class="small dim">Works with MP3, WAV, M4A, OGG and FLAC. Once it's loaded you can add the song's MIDI file for its exact notes. Your music never leaves this device.</p>
     </div>
   </section>
 
@@ -103,6 +103,22 @@ input[type=range]{width:100%;accent-color:var(--accent);height:28px}
       <div class="kicker" id="srcTxt">Detected from audio</div>
       <h2 id="songName">Song</h2>
       <div class="stats" id="songStats"></div>
+      <div class="field" id="midiField" hidden>
+        <span class="lab">Exact notes (optional)</span>
+        <div id="midiNone" class="stack">
+          <label class="btn ghost" for="midiIn">Add a MIDI file</label>
+          <p class="small dim">Right now the taps are detected from your recording. Add the song's MIDI file and you play its exact notes over the same recording.</p>
+        </div>
+        <div id="midiHave" class="stack" hidden>
+          <p class="small"><b id="midiName"></b> is supplying the notes.</p>
+          <label for="syncRange" id="syncLab" class="small dim">MIDI sync</label>
+          <input id="syncRange" type="range" min="-2000" max="2000" step="10" value="0">
+          <p class="small dim">Lined up with the recording automatically. If the notes land early or late against the music, nudge this.</p>
+          <button id="midiDrop" class="btn ghost" type="button">Remove the MIDI file</button>
+        </div>
+        <input id="midiIn" type="file" accept=".mid,.midi,audio/midi,audio/x-midi" hidden>
+        <p id="midiErr" class="err small" hidden></p>
+      </div>
       <div class="field" id="partField" hidden>
         <label for="partSel">Part to learn</label>
         <select id="partSel"></select>
@@ -266,7 +282,7 @@ function parseMidi(ab){const d=new DataView(ab);let p=0;
 function midiSong(parsed,name){const groups=parsed.groups.filter(g=>g.notes.length),mel=groups.filter(g=>!g.drum);
   if(!mel.length)throw new Error('No notes found');const maxN=Math.max(...mel.map(g=>g.notes.length));let best=null,ba=-1;
   for(const g of mel){if(g.notes.length<maxN*.35)continue;let a=0;for(const n of g.notes)a+=n.n;a/=g.notes.length;if(a>ba){ba=a;best=g}}
-  return{kind:'midi',name,groups,sel:groups.indexOf(best),duration:parsed.duration,bpm:parsed.bpm,rendered:null,rkey:''}}
+  return{kind:'midi',name,groups,sel:groups.indexOf(best),duration:parsed.duration,bpm:parsed.bpm,rendered:null,rkey:'',off:0,auto:0}}
 function demoSong(){const q=.5,mel=[],bass=[];let t=0;
   const L1=[[64,1],[64,1],[65,1],[67,1],[67,1],[65,1],[64,1],[62,1],[60,1],[60,1],[62,1],[64,1]];
   const endA=[[64,1.5],[62,.5],[62,2]],endB=[[62,1.5],[60,.5],[60,2]];
@@ -306,8 +322,8 @@ function laneByRank(notes){const ps=notes.filter(n=>n.m!=null).map(n=>n.m).sort(
   const lo=v=>{let a=0,b=N;while(a<b){const m=(a+b)>>1;if(ps[m]<v)a=m+1;else b=m}return a},hi=v=>{let a=0,b=N;while(a<b){const m=(a+b)>>1;if(ps[m]<=v)a=m+1;else b=m}return a};
   if(ps[0]===ps[N-1]){notes.forEach((n,i)=>{if(n.m!=null)n.lane=1+(i%2)});return}
   for(const n of notes)if(n.m!=null)n.lane=clamp(Math.floor((lo(n.m)+hi(n.m))/2/N*4),0,3)}
-function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];
-  if(song.kind==='audio'){const beat=song.bpm>0?60/song.bpm:.5,gap=[clamp(beat,.36,.75),clamp(beat/2,.2,.36),.11][diff];
+function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];const src=song.midi||song,off=song.midi?song.midi.off:0;
+  if(song.kind==='audio'&&!song.midi){const beat=song.bpm>0?60/song.bpm:.5,gap=[clamp(beat,.36,.75),clamp(beat/2,.2,.36),.11][diff];
     const byS=song.onsets.slice().sort((a,b)=>b.s-a.s),kept=[];
     for(const o of byS){let ok=true;for(let i=0;i<kept.length;i++)if(Math.abs(kept[i].t-o.t)<gap){ok=false;break}if(ok)kept.push(o)}
     kept.sort((a,b)=>a.t-b.t);
@@ -315,11 +331,11 @@ function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];
     let alt=0;base=kept.map(o=>({t:o.t,m:o.m,s:o.s,name:o.m!=null?noteName(o.m):'',lane:o.band===0?0:o.band===2?3:1+(alt++%2)}));
     const ss=base.map(o=>o.s).sort((a,b)=>a-b),cut=ss.length>4?ss[Math.floor(ss.length*[.8,.65,.5][diff])]:Infinity;base.forEach(o=>{o.ch=o.s>=cut})}
   else{const gap=[.4,.2,.05][diff];
-    if(inst==='drums'){const dn=[];song.groups.forEach(g=>{if(g.drum)for(const n of g.notes)dn.push({t:n.t,name:'',lane:gmLane(n.n)})});
+    if(inst==='drums'){const dn=[];src.groups.forEach(g=>{if(g.drum)for(const n of g.notes){const t=n.t+off;if(t>=0&&t<=song.duration)dn.push({t,name:'',lane:gmLane(n.n)})}});
       if(dn.length){dn.sort((a,b)=>a.t-b.t);const last=[-9,-9,-9,-9],out=[];for(const n of dn)if(n.t-last[n.lane]>=Math.max(gap,.06)){out.push(n);last[n.lane]=n.t}return out}}
-    const g=song.groups[song.sel],merged=[];
+    const g=src.groups[src.sel],merged=[];
     for(const n of g.notes){const l=merged[merged.length-1];if(l&&n.t-l.t<.04){l.cnt++;if(n.n>l.m)l.m=n.n}else merged.push({t:n.t,m:n.n,cnt:1})}
-    let last=-9;for(const n of merged)if(n.t-last>=gap){base.push({t:n.t,m:n.m,name:noteName(n.m),lane:0,ch:n.cnt>=2});last=n.t}
+    let last=-9;for(const n of merged){const t=n.t+off;if(t<0||t>song.duration)continue;if(t-last>=gap){base.push({t,m:n.m,name:noteName(n.m),lane:0,ch:n.cnt>=2});last=t}}
     if(inst==='guitar'&&!base.some(n=>n.ch))base.forEach((n,i)=>{n.ch=i%4===0})}
   laneByRank(base);
   if(inst==='drums')return base.map(n=>({t:n.t,name:'',lane:n.lane}));
@@ -327,6 +343,12 @@ function buildChart(song,diff,inst){inst=inst||S.inst;let base=[];
   const out=base.map(n=>({t:n.t,lane:n.lane,name:n.name}));
   if(inst==='sax'||inst==='violin')for(let i=0;i+1<out.length;i++){const a=out[i],b=out[i+1],dt=b.t-a.t;if(dt>=.2&&dt<=.9&&a.lane!==b.lane){a.to=i+1;b.end=true;b.from=i;i++}}
   return out}
+
+function alignMidi(m,onsets){const ts=[];for(const g of m.groups)for(const n of g.notes)ts.push(n.t);ts.sort((a,b)=>a-b);
+  const step=Math.max(1,Math.floor(ts.length/900)),LO=-15,HI=45,BIN=.01,nb=Math.round((HI-LO)/BIN),h=new Float32Array(nb+2);
+  for(let i=0;i<ts.length;i+=step)for(const o of onsets){const d=o.t-ts[i];if(d>=LO&&d<HI)h[Math.floor((d-LO)/BIN)]++}
+  let best=0,bv=-1;for(let i=1;i<nb;i++){const v=h[i-1]+2*h[i]+h[i+1];if(v>bv){bv=v;best=i}}
+  const a=h[best-1],b=h[best],c=h[best+1],tot=a+b+c;return LO+(best+.5+(tot?(c-a)/tot:0))*BIN}
 
 /* ---------- transport (song clock) ---------- */
 const TR={buf:null,src:null,g:null,rate:1,scale:1,pos:0,playing:false,startPos:0,anchor:0,ctxStart:0};
@@ -562,7 +584,7 @@ window.__back=()=>{if(G&&G.running){if(G.paused)quitGame();else pauseGame();retu
 function show(name){for(const s of['home','busy','setup','pause','results'])$(s).hidden=s!==name;$('pauseBtn').hidden=name!=='game'}
 function setBusy(txt,p){$('busyTxt').textContent=txt;$('busyBar').style.width=Math.round(clamp(p,0,1)*100)+'%'}
 function seg(ids,cur){ids.forEach((id,i)=>$(id).setAttribute('aria-pressed',String(i===cur)))}
-const bestKey=()=>song.name+'|'+S.inst+'|'+S.diff+(song.kind==='midi'?'|'+song.sel:'');
+const bestKey=()=>song.name+'|'+S.inst+'|'+S.diff+(song.midi?'|m'+song.midi.sel:song.kind==='midi'?'|'+song.sel:'');
 function refreshSetup(){charts=[0,1,2].map(d=>buildChart(song,d,S.inst));seg(INST_IDS,INST_KEYS.indexOf(S.inst));$('instHint').textContent=INST[S.inst].hint;
   seg(['d0','d1','d2'],S.diff);seg(['mPlay','mLearn'],S.mode==='learn'?1:0);seg(['s50','s75','s100'],S.speed===.5?0:S.speed===.75?1:2);
   const n=charts[S.diff].length;$('diffHint').textContent=n+' taps'+(song.duration?' · about '+(n/Math.max(1,song.duration)*S.speed).toFixed(1)+' a second at this speed':'');
@@ -571,11 +593,15 @@ function refreshSetup(){charts=[0,1,2].map(d=>buildChart(song,d,S.inst));seg(INS
   $('namesChk').checked=!!S.names;$('offRange').value=S.offset;$('offLab').textContent='Timing offset: '+(S.offset>0?'+':'')+S.offset+' ms';
   const b=store.get('bt_best',{})[bestKey()];$('bestTxt').textContent=b?'Your best on this setting: '+b.score.toLocaleString('en-GB')+' · '+b.acc.toFixed(1)+'%':'';$('bestTxt').hidden=!b;
   $('startBtn').disabled=!n;$('startBtn').textContent=n?'Start':'No notes found'}
-function openSetup(){$('songName').textContent=song.name;$('srcTxt').textContent=song.kind==='midi'?'Exact notes from MIDI':'Detected from the recording';
+const mSrc=()=>song.midi||(song.kind==='midi'?song:null);
+function syncLab(){const o=song.midi.off;$('syncLab').textContent='MIDI sync: notes start '+(o>=0?'+':'−')+Math.abs(o).toFixed(2)+' s into the recording'}
+function openSetup(){$('songName').textContent=song.name;$('srcTxt').textContent=song.midi?'Exact notes from MIDI, over your recording':song.kind==='midi'?'Exact notes from MIDI':'Detected from the recording';
   const st=$('songStats');st.textContent='';const add=(l,v)=>{const s=document.createElement('span');s.append(l+' ');const b=document.createElement('b');b.textContent=v;s.append(b);st.append(s)};
   add('Length',fmtTime(song.duration));if(song.bpm>0)add('Tempo',(song.kind==='audio'?'≈':'')+Math.round(song.bpm)+' BPM');
-  const pf=$('partField');pf.hidden=song.kind!=='midi'||song.groups.filter(g=>!g.drum).length<2;
-  if(song.kind==='midi'){const sel=$('partSel');sel.textContent='';song.groups.forEach((g,i)=>{if(g.drum)return;const o=document.createElement('option');o.value=i;o.textContent=g.name+' ('+g.notes.length+' notes)';sel.append(o)});sel.value=song.sel}
+  const ms=mSrc(),pf=$('partField');pf.hidden=!ms||ms.groups.filter(g=>!g.drum).length<2;
+  $('midiField').hidden=song.kind!=='audio';$('midiNone').hidden=!!song.midi;$('midiHave').hidden=!song.midi;$('midiErr').hidden=true;
+  if(song.midi){$('midiName').textContent=song.midi.name;$('syncRange').value=Math.round((song.midi.off-song.midi.auto)*1000);syncLab()}
+  if(ms){const sel=$('partSel');sel.textContent='';ms.groups.forEach((g,i)=>{if(g.drum)return;const o=document.createElement('option');o.value=i;o.textContent=g.name+' ('+g.notes.length+' notes)';sel.append(o)});sel.value=ms.sel}
   refreshSetup();show('setup')}
 INST_IDS.forEach((id,i)=>$(id).addEventListener('click',()=>{S.inst=INST_KEYS[i];saveS();refreshSetup()}));
 [['d0',0],['d1',1],['d2',2]].forEach(([id,v])=>$(id).addEventListener('click',()=>{S.diff=v;saveS();refreshSetup()}));
@@ -583,7 +609,7 @@ $('mPlay').addEventListener('click',()=>{S.mode='play';saveS();refreshSetup()});
 [['s50',.5],['s75',.75],['s100',1]].forEach(([id,v])=>$(id).addEventListener('click',()=>{S.speed=v;saveS();refreshSetup()}));
 $('namesChk').addEventListener('change',e=>{S.names=e.target.checked;saveS()});
 $('offRange').addEventListener('input',e=>{S.offset=+e.target.value;saveS();$('offLab').textContent='Timing offset: '+(S.offset>0?'+':'')+S.offset+' ms'});
-$('partSel').addEventListener('change',e=>{song.sel=+e.target.value;refreshSetup()});
+$('partSel').addEventListener('change',e=>{mSrc().sel=+e.target.value;refreshSetup()});
 $('startBtn').addEventListener('click',()=>{startGame()});$('changeBtn').addEventListener('click',()=>show('home'));
 $('pauseBtn').addEventListener('click',pauseGame);$('resumeBtn').addEventListener('click',resumeGame);$('restartBtn').addEventListener('click',()=>{trKill();startGame()});$('quitBtn').addEventListener('click',quitGame);
 $('againBtn').addEventListener('click',()=>startGame());$('backBtn').addEventListener('click',openSetup);
@@ -614,13 +640,20 @@ async function loadFile(file){homeErr('');show('busy');setBusy('Reading the file
       const an=await analyzeAudio(buf,p=>setBusy('Listening for beats and notes',.05+.95*p));song={kind:'audio',name,buffer:buf,duration:buf.duration,onsets:an.onsets,bpm:an.bpm}}
     openSetup()}
   catch(e){console.error(e);show('home');homeErr('That file couldn\'t be read. Try an MP3, WAV, M4A, OGG, FLAC or MIDI file.')}}
+// optional: the song's MIDI file, for exact notes over the loaded recording
+async function addMidi(file){const err=$('midiErr');err.hidden=true;
+  try{const ab=await file.arrayBuffer(),m=midiSong(parseMidi(ab),(file.name||'MIDI').replace(/\.[a-z0-9]{2,5}$/i,''));m.auto=m.off=alignMidi(m,song.onsets);song.midi=m;openSetup()}
+  catch(e){console.error(e);err.textContent='That isn\'t a MIDI file. Pick a file ending in .mid or .midi.';err.hidden=false}}
+$('midiIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f&&song&&song.kind==='audio')addMidi(f)});
+$('midiDrop').addEventListener('click',()=>{song.midi=null;openSetup()});
+$('syncRange').addEventListener('input',e=>{song.midi.off=song.midi.auto+(+e.target.value)/1000;syncLab();refreshSetup()});
 $('fileIn').addEventListener('change',e=>{const f=e.target.files&&e.target.files[0];e.target.value='';if(f)loadFile(f)});
 $('demoBtn').addEventListener('click',()=>{ac();homeErr('');song=demoSong();openSetup()});
 
 // a song handed over by Android (Open with / Share to Beat Tutor)
 window.__openShared=name=>{if(G&&G.running){G.running=false;trKill();TR.playing=false}show('busy');setBusy('Reading the file',.02);
   fetch('/shared/song?'+Date.now()).then(r=>{if(!r.ok)throw new Error('shared');return r.arrayBuffer()}).then(ab=>loadFile(new File([ab],name||'Shared song'))).catch(()=>{show('home');homeErr('That file couldn\'t be opened.')})};
-window.__bt={ptrs,LV,analyzeAudio,parseMidi,midiSong,buildChart,loadFile,state:()=>({G,song,S,now:TR.buf?trNow():0,playing:TR.playing}),auto:v=>{if(G)G.auto=v},tap};
+window.__bt={alignMidi,addMidi,ptrs,LV,analyzeAudio,parseMidi,midiSong,buildChart,loadFile,state:()=>({G,song,S,now:TR.buf?trNow():0,playing:TR.playing}),auto:v=>{if(G)G.auto=v},tap};
 show('home');requestAnimationFrame(loop);
 })();
 </script>

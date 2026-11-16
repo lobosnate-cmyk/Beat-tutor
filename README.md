@@ -18,7 +18,7 @@ Needs Android 8.0 or newer. The app has no internet permission: songs are analys
 | Song type | What you get |
 |---|---|
 | MP3, WAV, M4A, OGG, FLAC | Taps detected from the recording: every drum hit, strum and note onset, plus a best guess at each note's pitch. |
-| MIDI (`.mid`) | The song's exact notes, with note names. Pick which part to learn. |
+| The recording plus its MIDI (`.mid`) | Load the recording first, then add the MIDI on the setup screen. You play the MIDI's exact notes, with note names, over your recording. The app lines the two up and gives you a sync slider. |
 
 - **Instruments:** keys, guitar (with two-finger chords), drums (kick, snare, tom, hi-hat pads), sax and violin (taps plus drag slides). Each has its own layout, on-stage player and wrong-note sound.
 - **Crowd boost:** clean hits fill the crowd meter. Each level recolours the stage (blue, green, pink, purple, red) and multiplies the score up to ×4. Misses drain it.
